@@ -13,36 +13,40 @@ export interface CallInfo {
   callType?: CallType;
 }
 
+interface ActiveCall {
+  callId: string;
+  remoteUserId: string;
+  callType: CallType;
+}
+
 export const useCall = (userId: string) => {
   const pc = useRef<RTCPeerConnection | null>(null);
   const localStream = useRef<MediaStream | null>(null);
+  const ringtoneRef = useRef<HTMLAudioElement | null>(null);
 
   const iceCandidateQueue = useRef<RTCIceCandidateInit[]>([]);
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
 
   const [incomingCall, setIncomingCall] = useState<CallInfo | null>(null);
-  const [outgoingCallId, setOutgoingCallId] = useState<string>("");
   const [callStatus, setCallStatus] = useState<CallStatus>("idle");
-  const [remoteUserId, setRemoteUserId] = useState<string | null>(null);
-  const [callId, setCallId] = useState<string | null>(null);
-  const [callType, setCallType] = useState<CallType>(CallType.VIDEO);
+  const [activeCall, setActiveCall] = useState<ActiveCall | null>(null);
   const [isMuted, setIsMuted] = useState(false);
   const [isCameraOff, setIsCameraOff] = useState(false);
   const [remoteAudioEnabled, setRemoteAudioEnabled] = useState(true);
   const [remoteVideoEnabled, setRemoteVideoEnabled] = useState(true);
-  const [callDuration, setCallDuration] = useState(0);
+  const [connectedAt, setConnectedAt] = useState<number | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-
-  const durationInterval = useRef<NodeJS.Timeout | null>(null);
 
   const socketRef = useRef(userId ? getSocket(userId) : null);
 
   const callTypeRef = useRef<CallType>(CallType.VIDEO);
 
   useEffect(() => {
-    callTypeRef.current = callType;
-  }, [callType]);
+    if (activeCall?.callType) {
+      callTypeRef.current = activeCall.callType;
+    }
+  }, [activeCall?.callType]);
 
   useEffect(() => {
     if (userId) {
@@ -75,7 +79,9 @@ export const useCall = (userId: string) => {
         remoteVideoRef.current.srcObject = stream;
       }
 
-      peerConnection._remoteStream = stream;
+      (
+        peerConnection as unknown as { remoteStream: MediaStream }
+      ).remoteStream = stream;
     };
 
     peerConnection.onicecandidate = (e) => {
@@ -92,12 +98,7 @@ export const useCall = (userId: string) => {
       const state = peerConnection.iceConnectionState;
       if (state === "connected" || state === "completed") {
         setCallStatus("connected");
-        if (durationInterval.current) {
-          clearInterval(durationInterval.current);
-        }
-        durationInterval.current = setInterval(() => {
-          setCallDuration((prev) => prev + 1);
-        }, 1000);
+        setConnectedAt((prev) => prev ?? Date.now());
       }
       if (state === "failed") {
         endCallRef.current();
@@ -115,35 +116,27 @@ export const useCall = (userId: string) => {
     localStream.current = null;
     if (localVideoRef.current) localVideoRef.current.srcObject = null;
     if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null;
-    if (durationInterval.current) {
-      clearInterval(durationInterval.current);
-      durationInterval.current = null;
-    }
     setCallStatus("idle");
     setIncomingCall(null);
-    setRemoteUserId(null);
-    setCallId(null);
-    setOutgoingCallId("");
+    setActiveCall(null);
     setIsMuted(false);
     setIsCameraOff(false);
     setRemoteAudioEnabled(true);
     setRemoteVideoEnabled(true);
-    setCallDuration(0);
+    setConnectedAt(null);
     setErrorMessage(null);
     iceCandidateQueue.current = [];
   }, []);
 
   const endCall = useCallback(() => {
-    const activeCallId = callId || outgoingCallId;
-    if (remoteUserId && activeCallId) {
+    if (activeCall?.remoteUserId && activeCall.callId) {
       socketRef.current?.emit(CallEvents.CALL_END, {
-        to: remoteUserId,
-        callId: activeCallId,
+        to: activeCall.remoteUserId,
+        callId: activeCall.callId,
       });
     }
     cleanup();
-  }, [remoteUserId, callId, outgoingCallId, cleanup]);
-
+  }, [activeCall, cleanup]);
   useEffect(() => {
     endCallRef.current = endCall;
   }, [endCall]);
@@ -166,9 +159,7 @@ export const useCall = (userId: string) => {
         callType: CallType;
       }) => {
         setIncomingCall({ from, callId: cId, callType: cType });
-        setRemoteUserId(from);
-        setCallId(cId);
-        setCallType(cType);
+        setActiveCall({ callId: cId, remoteUserId: from, callType: cType });
 
         s.emit(CallEvents.CALL_RINGING, { to: from, callId: cId });
       },
@@ -177,8 +168,8 @@ export const useCall = (userId: string) => {
     s.on(
       CallEvents.CALL_RINGING,
       ({ callId }: { from: string; callId: string }) => {
-        setOutgoingCallId(callId);
         setCallStatus("ringing");
+        setActiveCall((prev) => (prev ? { ...prev, callId: callId } : prev));
       },
     );
 
@@ -212,7 +203,8 @@ export const useCall = (userId: string) => {
       }) => {
         const peerConnection = createPc(from, cId);
 
-        const stream = localStream.current ?? (await acquireMedia(callTypeRef.current));
+        const stream =
+          localStream.current ?? (await acquireMedia(callTypeRef.current));
 
         stream
           .getTracks()
@@ -333,11 +325,9 @@ export const useCall = (userId: string) => {
       }
 
       setCallStatus("calling");
-      setRemoteUserId(to);
-      setCallType(type);
+      setActiveCall({ callId: "", remoteUserId: to, callType: type });
       setErrorMessage(null);
 
-      // Acquire media early so the local camera preview is visible immediately
       await acquireMedia(type);
 
       s.emit(CallEvents.CALL_INITIATE, {
@@ -353,15 +343,13 @@ export const useCall = (userId: string) => {
 
     const { from, callId: cId, callType: cType } = incomingCall;
     setIncomingCall(null);
-    setRemoteUserId(from);
-    setCallId(cId);
+    setActiveCall({
+      callId: cId,
+      remoteUserId: from,
+      callType: cType ?? CallType.VIDEO,
+    });
 
-    // Acquire media early so the local camera preview is visible for the callee too
-    if (cType) {
-      await acquireMedia(cType);
-    } else {
-      await acquireMedia(CallType.VIDEO);
-    }
+    await acquireMedia(cType ?? CallType.VIDEO);
 
     socketRef.current?.emit(CallEvents.CALL_ACCEPT, { to: from, callId: cId });
   }, [incomingCall, acquireMedia]);
@@ -377,16 +365,15 @@ export const useCall = (userId: string) => {
   }, [incomingCall, cleanup]);
 
   const cancelCall = useCallback(() => {
-    if (remoteUserId && outgoingCallId) {
+    if (activeCall?.remoteUserId && activeCall.callId) {
       socketRef.current?.emit(CallEvents.CALL_CANCELLED, {
-        to: remoteUserId,
-        callId: outgoingCallId,
+        to: activeCall.remoteUserId,
+        callId: activeCall.callId,
       });
     }
     cleanup();
-  }, [remoteUserId, outgoingCallId, cleanup]);
+  }, [activeCall, cleanup]);
 
-  /* -------------------- Toggle Mute -------------------- */
   const toggleMute = useCallback(() => {
     if (localStream.current) {
       const newEnabled = !localStream.current.getAudioTracks()[0]?.enabled;
@@ -395,17 +382,16 @@ export const useCall = (userId: string) => {
       });
       setIsMuted(!newEnabled);
 
-      if (remoteUserId && callId) {
+      if (activeCall) {
         socketRef.current?.emit(CallEvents.CALL_TOGGLE_AUDIO, {
-          to: remoteUserId,
-          callId,
+          to: activeCall.remoteUserId,
+          callId: activeCall.callId,
           enabled: newEnabled,
         });
       }
     }
-  }, [remoteUserId, callId]);
+  }, [activeCall]);
 
-  /* -------------------- Toggle Camera -------------------- */
   const toggleCamera = useCallback(() => {
     if (localStream.current) {
       const newEnabled = !localStream.current.getVideoTracks()[0]?.enabled;
@@ -414,38 +400,88 @@ export const useCall = (userId: string) => {
       });
       setIsCameraOff(!newEnabled);
 
-      if (remoteUserId && callId) {
+      if (activeCall?.remoteUserId && activeCall?.callId) {
         socketRef.current?.emit(CallEvents.CALL_TOGGLE_VIDEO, {
-          to: remoteUserId,
-          callId,
+          to: activeCall.remoteUserId,
+          callId: activeCall.callId,
           enabled: newEnabled,
         });
       }
     }
-  }, [remoteUserId, callId]);
+  }, [activeCall]);
+
+  const startRingtone = useCallback(() => {
+    const audioSrc =
+      callTypeRef.current === CallType.VIDEO
+        ? "/audio/videoNotif.mp3"
+        : "/audio/notification.mp3";
+
+    if (
+      ringtoneRef.current &&
+      ringtoneRef.current.src !== new URL(audioSrc, window.location.origin).href
+    ) {
+      ringtoneRef.current.pause();
+      ringtoneRef.current = null;
+    }
+
+    if (!ringtoneRef.current) {
+      ringtoneRef.current = new Audio(audioSrc);
+      ringtoneRef.current.loop = true;
+    }
+    ringtoneRef.current.currentTime = 0;
+    ringtoneRef.current.play().catch((err) => {
+      console.warn("Could not play ringtone:", err);
+    });
+  }, []);
+
+  const stopRingtone = useCallback(() => {
+    if (ringtoneRef.current) {
+      ringtoneRef.current.pause();
+      ringtoneRef.current.currentTime = 0;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (callStatus === "ringing") {
+      startRingtone();
+    } else {
+      stopRingtone();
+    }
+    return () => stopRingtone();
+  }, [callStatus, startRingtone, stopRingtone]);
 
   useEffect(() => {
     if (
       remoteVideoRef.current &&
       pc.current &&
-      (pc.current)._remoteStream &&
+      (pc.current as unknown as { remoteStream: MediaStream }).remoteStream &&
       !remoteVideoRef.current.srcObject
     ) {
-      remoteVideoRef.current.srcObject = (pc.current)._remoteStream;
+      remoteVideoRef.current.srcObject = (
+        pc.current as unknown as { remoteStream: MediaStream }
+      ).remoteStream;
+    }
+
+    if (
+      localVideoRef.current &&
+      localStream.current &&
+      !localVideoRef.current.srcObject
+    ) {
+      localVideoRef.current.srcObject = localStream.current;
     }
   });
 
   return {
     incomingCall,
     callStatus,
-    callType,
-    callId,
-    remoteUserId,
+    callType: activeCall?.callType ?? CallType.VIDEO,
+    callId: activeCall?.callId ?? null,
+    remoteUserId: activeCall?.remoteUserId ?? null,
     isMuted,
     isCameraOff,
     remoteAudioEnabled,
     remoteVideoEnabled,
-    callDuration,
+    connectedAt,
     errorMessage,
     startCall,
     acceptCall,

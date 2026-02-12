@@ -1,9 +1,29 @@
 "use client";
 
-import { CallStatus } from "@/hooks/useCall";
+import { useEffect, useState } from "react";
 import { CallType } from "@/enum/socket-enum";
+import { CallStatus } from "@/hooks/useCall";
+import { Mic, MicOff, Phone, Video, VideoOff } from "lucide-react";
+
+const CallTimer = ({ connectedAt }: { connectedAt: number }) => {
+  const [elapsed, setElapsed] = useState(() =>
+    Math.floor((Date.now() - connectedAt) / 1000)
+  );
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      setElapsed(Math.floor((Date.now() - connectedAt) / 1000));
+    }, 1000);
+    return () => clearInterval(id);
+  }, [connectedAt]);
+
+  const mins = Math.floor(elapsed / 60);
+  const secs = elapsed % 60;
+  return <>{`${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`}</>;
+}
 
 type Props = {
+  userId: string;
   localVideoRef: React.RefObject<HTMLVideoElement | null>;
   remoteVideoRef: React.RefObject<HTMLVideoElement | null>;
   callStatus: CallStatus;
@@ -13,20 +33,15 @@ type Props = {
   isCameraOff: boolean;
   remoteAudioEnabled: boolean;
   remoteVideoEnabled: boolean;
-  callDuration: number;
+  connectedAt: number | null;
   onEndCall: () => void;
   onCancelCall: () => void;
   onToggleMute: () => void;
   onToggleCamera: () => void;
 };
 
-const formatDuration = (seconds: number): string => {
-  const mins = Math.floor(seconds / 60);
-  const secs = seconds % 60;
-  return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
-};
-
 export const CallUI = ({
+  userId,
   localVideoRef,
   remoteVideoRef,
   callStatus,
@@ -36,7 +51,7 @@ export const CallUI = ({
   isCameraOff,
   remoteAudioEnabled,
   remoteVideoEnabled,
-  callDuration,
+  connectedAt,
   onEndCall,
   onCancelCall,
   onToggleMute,
@@ -49,32 +64,17 @@ export const CallUI = ({
 
   return (
     <div className="fixed inset-0 z-40 flex flex-col bg-black">
-      <div className="absolute left-0 right-0 top-0 z-50 flex items-center justify-between bg-linear-to-b from-black/80 to-transparent px-6 py-4">
-        <div className="flex flex-col">
+      <div className="absolute left-0 right-0 top-0 z-50 flex items-center justify-center bg-linear-to-b from-black/80 to-transparent px-6 py-4">
+        <div className="flex flex-col items-center">
           <span className="text-lg font-semibold text-white">
             {remoteUserId ?? "Unknown"}
           </span>
-          <span className="text-sm text-gray-300">
+          <span className="text-sm text-white">
             {callStatus === "calling" && "Calling…"}
             {callStatus === "ringing" && "Ringing…"}
-            {isConnected && formatDuration(callDuration)}
+            {!remoteAudioEnabled ? "Muted" : isConnected && connectedAt && <CallTimer connectedAt={connectedAt} />}
           </span>
         </div>
-
-        {isConnected && (
-          <div className="flex gap-2">
-            {!remoteAudioEnabled && (
-              <span className="rounded-full bg-red-500/80 px-2 py-1 text-xs text-white">
-                🔇 Muted
-              </span>
-            )}
-            {!remoteVideoEnabled && isVideoCall && (
-              <span className="rounded-full bg-red-500/80 px-2 py-1 text-xs text-white">
-                📷 Off
-              </span>
-            )}
-          </div>
-        )}
       </div>
 
       {isVideoCall ? (
@@ -90,7 +90,6 @@ export const CallUI = ({
               <div className="flex h-28 w-28 items-center justify-center rounded-full bg-linear-to-br from-gray-600 to-gray-800 text-5xl font-bold text-white">
                 {remoteUserId?.charAt(0).toUpperCase() ?? "?"}
               </div>
-              <p className="mt-4 text-gray-400">Camera is off</p>
             </div>
           )}
         </>
@@ -102,7 +101,6 @@ export const CallUI = ({
               <div className="flex h-32 w-32 items-center justify-center rounded-full bg-linear-to-br from-green-400 to-green-600 text-6xl font-bold text-white">
                 {remoteUserId?.charAt(0).toUpperCase() ?? "?"}
               </div>
-              <p className="mt-6 text-2xl font-semibold text-white">{remoteUserId}</p>
             </div>
           )}
         </>
@@ -113,15 +111,6 @@ export const CallUI = ({
           <div className="flex h-32 w-32 items-center justify-center rounded-full bg-linear-to-br from-green-400 to-green-600 text-6xl font-bold text-white shadow-xl">
             {remoteUserId?.charAt(0).toUpperCase() ?? "?"}
           </div>
-          <p className="mt-6 text-2xl font-semibold text-white">
-            {remoteUserId}
-          </p>
-          <p className="mt-2 animate-pulse text-gray-400">
-            {callStatus === "calling" ? "Calling…" : "Ringing…"}
-          </p>
-          <p className="mt-1 text-sm text-gray-500">
-            {callType === CallType.VIDEO ? "Video call" : "Audio call"}
-          </p>
         </div>
       )}
 
@@ -135,8 +124,10 @@ export const CallUI = ({
             className="h-48 w-36 object-cover"
           />
           {isCameraOff && (
-            <div className="absolute inset-0 flex items-center justify-center bg-gray-800 text-sm text-gray-400">
-              Camera Off
+            <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-900/90">
+              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-linear-to-br from-green-400 to-green-600 text-xl font-bold text-white shadow-xl">
+                {userId.charAt(0).toUpperCase() ?? "?"}
+              </div>
             </div>
           )}
         </div>
@@ -145,34 +136,34 @@ export const CallUI = ({
       <div className="absolute bottom-0 left-0 right-0 z-50 flex items-center justify-center gap-5 bg-linear-to-t from-black/90 to-transparent px-6 py-8">
         <button
           onClick={onToggleMute}
-          className={`flex h-14 w-14 items-center justify-center rounded-full text-xl transition active:scale-95 ${isMuted
+          className={`flex h-12 w-12 items-center justify-center rounded-full transition ${isMuted
             ? "bg-white text-gray-900"
-            : "bg-white/20 text-white hover:bg-white/30"
+            : "bg-white/20 hover:bg-white/30"
             }`}
           aria-label={isMuted ? "Unmute" : "Mute"}
         >
-          {isMuted ? "🔇" : "🎤"}
+          {isMuted ? <MicOff /> : <Mic />}
         </button>
 
         {isVideoCall && (
           <button
             onClick={onToggleCamera}
-            className={`flex h-14 w-14 items-center justify-center rounded-full text-xl transition active:scale-95 ${isCameraOff
+            className={`flex h-12 w-12 items-center justify-center rounded-full transition ${isCameraOff
               ? "bg-white text-gray-900"
-              : "bg-white/20 text-white hover:bg-white/30"
+              : "bg-white/20 hover:bg-white/30"
               }`}
             aria-label={isCameraOff ? "Turn camera on" : "Turn camera off"}
           >
-            {isCameraOff ? "🚫" : "📷"}
+            {isCameraOff ? <VideoOff /> : <Video />}
           </button>
         )}
 
         <button
           onClick={isConnected ? onEndCall : onCancelCall}
-          className="flex h-14 w-16 items-center justify-center rounded-full bg-red-500 text-xl text-white shadow-lg transition hover:bg-red-600 active:scale-95"
+          className="flex h-12 w-20 items-center justify-center rounded-full bg-red-500 transition hover:bg-red-600"
           aria-label={isConnected ? "End call" : "Cancel call"}
         >
-          📵
+          <Phone strokeWidth={0} fill="white" className="rotate-135" />
         </button>
       </div>
     </div>

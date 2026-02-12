@@ -4,6 +4,7 @@ import { useState } from "react";
 import { CallUI, IncomingCall } from "@/components";
 import { useCall } from "@/hooks/useCall";
 import { CallType } from "@/enum/socket-enum";
+import { Phone, Video } from "lucide-react";
 
 export default function Home() {
   const [userId, setUserId] = useState("");
@@ -26,7 +27,7 @@ export default function Home() {
     isCameraOff,
     remoteAudioEnabled,
     remoteVideoEnabled,
-    callDuration,
+    connectedAt,
     errorMessage,
     localVideoRef,
     remoteVideoRef,
@@ -81,14 +82,18 @@ export default function Home() {
             disabled={!targetId.trim() || callStatus !== "idle"}
             className="rounded-lg bg-green-600 px-6 py-3 font-semibold text-white transition hover:bg-green-700 disabled:opacity-50"
           >
-            📞 Audio
+            <span className="flex items-center gap-2">
+              <Phone width={20} height={20} strokeWidth={0} fill="white" /> Audio
+            </span>
           </button>
           <button
             onClick={() => targetId.trim() && startCall(targetId, CallType.VIDEO)}
             disabled={!targetId.trim() || callStatus !== "idle"}
             className="rounded-lg bg-blue-600 px-6 py-3 font-semibold text-white transition hover:bg-blue-700 disabled:opacity-50"
           >
-            📹 Video
+            <span className="flex items-center gap-2">
+              <Video fill="white" /> Video
+            </span>
           </button>
         </div>
       </div>
@@ -103,6 +108,7 @@ export default function Home() {
       )}
 
       <CallUI
+        userId={userId}
         localVideoRef={localVideoRef}
         remoteVideoRef={remoteVideoRef}
         callStatus={callStatus}
@@ -112,7 +118,7 @@ export default function Home() {
         isCameraOff={isCameraOff}
         remoteAudioEnabled={remoteAudioEnabled}
         remoteVideoEnabled={remoteVideoEnabled}
-        callDuration={callDuration}
+        connectedAt={connectedAt}
         onEndCall={endCall}
         onCancelCall={cancelCall}
         onToggleMute={toggleMute}
