@@ -94,14 +94,18 @@ export const CallUI = ({
             </div>
           )}
         </>
-      ) : isConnected && (
-        <div className="flex h-full w-full flex-col items-center justify-center bg-linear-to-b from-gray-800 to-gray-950">
-          <div className="flex h-32 w-32 items-center justify-center rounded-full bg-linear-to-br from-green-400 to-green-600 text-6xl font-bold text-white">
-            {remoteUserId?.charAt(0).toUpperCase() ?? "?"}
-          </div>
-          <p className="mt-6 text-2xl font-semibold text-white">{remoteUserId}</p>
+      ) : (
+        <>
           <audio ref={remoteVideoRef} autoPlay playsInline />
-        </div>
+          {isConnected && (
+            <div className="flex h-full w-full flex-col items-center justify-center bg-linear-to-b from-gray-800 to-gray-950">
+              <div className="flex h-32 w-32 items-center justify-center rounded-full bg-linear-to-br from-green-400 to-green-600 text-6xl font-bold text-white">
+                {remoteUserId?.charAt(0).toUpperCase() ?? "?"}
+              </div>
+              <p className="mt-6 text-2xl font-semibold text-white">{remoteUserId}</p>
+            </div>
+          )}
+        </>
       )}
 
       {!isConnected && (

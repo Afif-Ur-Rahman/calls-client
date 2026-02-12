@@ -68,9 +68,14 @@ export const useCall = (userId: string) => {
     const peerConnection = createPeerConnection();
 
     peerConnection.ontrack = (e) => {
-      if (remoteVideoRef.current && e.streams[0]) {
-        remoteVideoRef.current.srcObject = e.streams[0];
+      const stream = e.streams[0];
+      if (!stream) return;
+
+      if (remoteVideoRef.current) {
+        remoteVideoRef.current.srcObject = stream;
       }
+
+      peerConnection._remoteStream = stream;
     };
 
     peerConnection.onicecandidate = (e) => {
@@ -87,6 +92,9 @@ export const useCall = (userId: string) => {
       const state = peerConnection.iceConnectionState;
       if (state === "connected" || state === "completed") {
         setCallStatus("connected");
+        if (durationInterval.current) {
+          clearInterval(durationInterval.current);
+        }
         durationInterval.current = setInterval(() => {
           setCallDuration((prev) => prev + 1);
         }, 1000);
@@ -204,7 +212,7 @@ export const useCall = (userId: string) => {
       }) => {
         const peerConnection = createPc(from, cId);
 
-        const stream = localStream.current ?? (await acquireMedia(callType));
+        const stream = localStream.current ?? (await acquireMedia(callTypeRef.current));
 
         stream
           .getTracks()
@@ -312,7 +320,7 @@ export const useCall = (userId: string) => {
       s.off(CallEvents.CALL_TOGGLE_AUDIO);
       s.off(CallEvents.CALL_TOGGLE_VIDEO);
     };
-  }, [userId, cleanup, acquireMedia, createPc, callType]);
+  }, [userId, cleanup, acquireMedia, createPc]);
 
   const startCall = useCallback(
     async (to: string, type: CallType = CallType.VIDEO) => {
@@ -415,6 +423,17 @@ export const useCall = (userId: string) => {
       }
     }
   }, [remoteUserId, callId]);
+
+  useEffect(() => {
+    if (
+      remoteVideoRef.current &&
+      pc.current &&
+      (pc.current)._remoteStream &&
+      !remoteVideoRef.current.srcObject
+    ) {
+      remoteVideoRef.current.srcObject = (pc.current)._remoteStream;
+    }
+  });
 
   return {
     incomingCall,
