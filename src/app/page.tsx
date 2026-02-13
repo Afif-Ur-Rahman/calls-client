@@ -13,9 +13,9 @@ export default function Home() {
 
   const {
     startCall,
-    acceptCall,
-    rejectCall,
-    cancelCall,
+    handleAcceptCall,
+    handleRejectCall,
+    handleCancelCall,
     endCall,
     toggleMute,
     toggleCamera,
@@ -103,8 +103,8 @@ export default function Home() {
         <IncomingCall
           from={incomingCall.from}
           callType={incomingCall.callType}
-          onAccept={acceptCall}
-          onReject={rejectCall}
+          onAccept={handleAcceptCall}
+          onReject={handleRejectCall}
         />
       )}
 
@@ -121,7 +121,7 @@ export default function Home() {
         remoteVideoEnabled={remoteVideoEnabled}
         connectedAt={connectedAt}
         onEndCall={endCall}
-        onCancelCall={cancelCall}
+        onCancelCall={handleCancelCall}
         onToggleMute={toggleMute}
         onToggleCamera={toggleCamera}
         errorMessage={errorMessage}

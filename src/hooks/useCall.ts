@@ -1,52 +1,67 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { getSocket } from "@/lib/socket";
-import { CallEvents, CallType } from "@/enum/socket-enum";
-import { createPeerConnection } from "@/lib/webrtc";
-
-export type CallStatus =
-  | "idle"
-  | "calling"
-  | "ringing"
-  | "connected"
-  | "busy"
-  | "missed";
-
-export interface CallInfo {
-  from: string;
-  callId: string;
-  callType?: CallType;
-}
-
-interface ActiveCall {
-  callId: string;
-  remoteUserId: string;
-  callType: CallType;
-}
+import { useCallback, useEffect, useRef } from "react";
+import { Call, CallEvents, CallType } from "@/enum/socket-enum";
+import { acquireMedia, createPc } from "@/lib/webrtc";
+import { useCallStore } from "@/store/call-store";
+import { useCallSocket } from "./useCallSocket";
+import { getSocket } from "@/lib";
 
 export const useCall = (userId: string) => {
+  const {
+    incomingCall,
+    activeCall,
+    callStatus,
+    isMuted,
+    isCameraOff,
+    remoteAudioEnabled,
+    remoteVideoEnabled,
+    connectedAt,
+    errorMessage,
+    setIncomingCall,
+    setActiveCall,
+    setCallStatus,
+    setIsMuted,
+    setIsCameraOff,
+    setRemoteAudioEnabled,
+    setRemoteVideoEnabled,
+    setConnectedAt,
+    setErrorMessage,
+    reset,
+    setSocket,
+  } = useCallStore();
+
   const pc = useRef<RTCPeerConnection | null>(null);
   const localStream = useRef<MediaStream | null>(null);
   const ringtoneRef = useRef<HTMLAudioElement | null>(null);
-
   const iceCandidateQueue = useRef<RTCIceCandidateInit[]>([]);
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
-
-  const [incomingCall, setIncomingCall] = useState<CallInfo | null>(null);
-  const [callStatus, setCallStatus] = useState<CallStatus>("idle");
-  const [activeCall, setActiveCall] = useState<ActiveCall | null>(null);
-  const [isMuted, setIsMuted] = useState(false);
-  const [isCameraOff, setIsCameraOff] = useState(false);
-  const [remoteAudioEnabled, setRemoteAudioEnabled] = useState(true);
-  const [remoteVideoEnabled, setRemoteVideoEnabled] = useState(true);
-  const [connectedAt, setConnectedAt] = useState<number | null>(null);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-
-  const socketRef = useRef(userId ? getSocket(userId) : null);
-
   const callTypeRef = useRef<CallType>(CallType.VIDEO);
+  const endCallRef = useRef(() => {});
+
+  const {
+    socket,
+    onIncomingCall,
+    onRinging,
+    onAccept,
+    onOffer,
+    onAnswer,
+    onIce,
+    onEnd,
+    onReject,
+    onCancelled,
+    onBusy,
+    onUnavailable,
+    onToggleAudio,
+    onToggleVideo,
+    onMissed,
+    initiateCall,
+    acceptCall,
+    rejectCall,
+    cancelCall,
+    off,
+  } = useCallSocket();
 
   useEffect(() => {
     if (activeCall?.callType) {
@@ -56,64 +71,10 @@ export const useCall = (userId: string) => {
 
   useEffect(() => {
     if (userId) {
-      socketRef.current = getSocket(userId);
+      setSocket(getSocket(userId));
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
-
-  const acquireMedia = useCallback(async (type: CallType = CallType.VIDEO) => {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: true,
-      video: type === CallType.VIDEO,
-    });
-    localStream.current = stream;
-    if (localVideoRef.current) {
-      localVideoRef.current.srcObject = stream;
-    }
-    return stream;
-  }, []);
-
-  const endCallRef = useRef(() => {});
-
-  const createPc = useCallback((targetId: string, currentCallId: string) => {
-    const peerConnection = createPeerConnection();
-
-    peerConnection.ontrack = (e) => {
-      const stream = e.streams[0];
-      if (!stream) return;
-
-      if (remoteVideoRef.current) {
-        remoteVideoRef.current.srcObject = stream;
-      }
-
-      (
-        peerConnection as unknown as { remoteStream: MediaStream }
-      ).remoteStream = stream;
-    };
-
-    peerConnection.onicecandidate = (e) => {
-      if (e.candidate) {
-        socketRef.current?.emit(CallEvents.CALL_ICE, {
-          to: targetId,
-          candidate: e.candidate,
-          callId: currentCallId,
-        });
-      }
-    };
-
-    peerConnection.oniceconnectionstatechange = () => {
-      const state = peerConnection.iceConnectionState;
-      if (state === "connected" || state === "completed") {
-        setCallStatus("connected");
-        setConnectedAt((prev) => prev ?? Date.now());
-      }
-      if (state === "failed") {
-        endCallRef.current();
-      }
-    };
-
-    pc.current = peerConnection;
-    return peerConnection;
-  }, []);
 
   const cleanup = useCallback(() => {
     pc.current?.close();
@@ -122,235 +83,276 @@ export const useCall = (userId: string) => {
     localStream.current = null;
     if (localVideoRef.current) localVideoRef.current.srcObject = null;
     if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null;
-    setCallStatus("idle");
-    setIncomingCall(null);
-    setActiveCall(null);
-    setIsMuted(false);
-    setIsCameraOff(false);
-    setRemoteAudioEnabled(true);
-    setRemoteVideoEnabled(true);
-    setConnectedAt(null);
-    setErrorMessage(null);
+    reset();
     iceCandidateQueue.current = [];
-  }, []);
+  }, [reset]);
 
   const endCall = useCallback(() => {
     if (activeCall?.remoteUserId && activeCall.callId) {
-      socketRef.current?.emit(CallEvents.CALL_END, {
+      socket?.emit(CallEvents.CALL_END, {
         to: activeCall.remoteUserId,
         callId: activeCall.callId,
       });
     }
     cleanup();
-  }, [activeCall, cleanup]);
+  }, [activeCall, cleanup, socket]);
+
   useEffect(() => {
     endCallRef.current = endCall;
   }, [endCall]);
 
   useEffect(() => {
-    if (!userId) return;
+    if (!socket) return;
 
-    const s = getSocket(userId);
-    socketRef.current = s;
+    const handleIncoming = (data: Call) => {
+      setIncomingCall({
+        from: data.from,
+        callId: data.callId,
+        callType: data.callType,
+      });
+      setActiveCall({
+        callId: data.callId,
+        remoteUserId: data.from,
+        callType: data.callType,
+      });
+      socket?.emit("call:ringing", {
+        to: data.from,
+        callId: data.callId,
+        callType: data.callType,
+      });
+    };
 
-    s.on(
-      CallEvents.CALL_INCOMING,
-      ({
-        callId: cId,
-        from,
-        callType: cType,
-      }: {
-        callId: string;
-        from: string;
-        callType: CallType;
-      }) => {
-        setIncomingCall({ from, callId: cId, callType: cType });
-        setActiveCall({ callId: cId, remoteUserId: from, callType: cType });
+    const handleRinging = (data: Call) => {
+      setCallStatus("ringing");
+      setActiveCall({
+        callId: data.callId,
+        remoteUserId: data.from,
+        callType: data.callType,
+      });
+    };
 
-        s.emit(CallEvents.CALL_RINGING, { to: from, callId: cId });
-      },
-    );
+    const handleAccept = async ({
+      from,
+      callId: cId,
+    }: {
+      from: string;
+      callId: string;
+    }) => {
+      const peerConnection = createPc({
+        pc,
+        targetId: from,
+        currentCallId: cId,
+        remoteVideoRef,
+        socketRef: socket,
+        setCallStatus,
+        setConnectedAt,
+        endCallRef: endCallRef.current,
+        connectedAt,
+      });
+      const stream =
+        localStream.current ??
+        (await acquireMedia({
+          type: callTypeRef.current,
+          localStream,
+          localVideoRef,
+        }));
+      stream
+        .getTracks()
+        .forEach((track) => peerConnection.addTrack(track, stream));
 
-    s.on(
-      CallEvents.CALL_RINGING,
-      ({ callId }: { from: string; callId: string }) => {
-        setCallStatus("ringing");
-        setActiveCall((prev) => (prev ? { ...prev, callId: callId } : prev));
-      },
-    );
+      const offer = await peerConnection.createOffer();
+      await peerConnection.setLocalDescription(offer);
 
-    s.on(
-      CallEvents.CALL_ACCEPT,
-      async ({ from, callId: cId }: { from: string; callId: string }) => {
-        const peerConnection = createPc(from, cId);
-        const stream =
-          localStream.current ?? (await acquireMedia(callTypeRef.current));
-        stream
-          .getTracks()
-          .forEach((track) => peerConnection.addTrack(track, stream));
-
-        const offer = await peerConnection.createOffer();
-        await peerConnection.setLocalDescription(offer);
-
-        s.emit(CallEvents.CALL_OFFER, { to: from, offer, callId: cId });
-      },
-    );
-
-    s.on(
-      CallEvents.CALL_OFFER,
-      async ({
-        from,
+      socket?.emit(CallEvents.CALL_OFFER, {
+        to: from,
         offer,
         callId: cId,
-      }: {
-        from: string;
-        offer: RTCSessionDescriptionInit;
-        callId: string;
-      }) => {
-        const peerConnection = createPc(from, cId);
-
-        const stream =
-          localStream.current ?? (await acquireMedia(callTypeRef.current));
-
-        stream
-          .getTracks()
-          .forEach((track) => peerConnection.addTrack(track, stream));
-
-        await peerConnection.setRemoteDescription(
-          new RTCSessionDescription(offer),
-        );
-
-        for (const c of iceCandidateQueue.current) {
-          try {
-            await peerConnection.addIceCandidate(new RTCIceCandidate(c));
-          } catch (err) {
-            console.warn("Error adding queued ICE candidate:", err);
-          }
-        }
-        iceCandidateQueue.current = [];
-
-        const answer = await peerConnection.createAnswer();
-        await peerConnection.setLocalDescription(answer);
-
-        s.emit(CallEvents.CALL_ANSWER, { to: from, answer, callId: cId });
-      },
-    );
-
-    s.on(
-      CallEvents.CALL_ANSWER,
-      async ({
-        answer,
-      }: {
-        from: string;
-        answer: RTCSessionDescriptionInit;
-        callId: string;
-      }) => {
-        if (pc.current) {
-          await pc.current.setRemoteDescription(
-            new RTCSessionDescription(answer),
-          );
-        }
-      },
-    );
-
-    s.on(
-      CallEvents.CALL_ICE,
-      async ({ candidate }: { candidate: RTCIceCandidateInit }) => {
-        const peerConnection = pc.current;
-
-        if (
-          !peerConnection ||
-          peerConnection.signalingState === "closed" ||
-          !peerConnection.remoteDescription
-        ) {
-          iceCandidateQueue.current.push(candidate);
-          return;
-        }
-
-        try {
-          await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
-        } catch (err) {
-          console.warn("Ignoring ICE candidate error:", err);
-        }
-      },
-    );
-
-    s.on(CallEvents.CALL_END, () => cleanup());
-    s.on(CallEvents.CALL_REJECT, () => cleanup());
-    s.on(CallEvents.CALL_CANCELLED, () => cleanup());
-
-    s.on(CallEvents.CALL_BUSY, ({ message }: { message: string }) => {
-      setCallStatus("busy");
-      setErrorMessage(message);
-    });
-
-    s.on(CallEvents.CALL_UNAVAILABLE, ({ message }: { message: string }) => {
-      setErrorMessage(message);
-      cleanup();
-    });
-
-    s.on(
-      CallEvents.CALL_TOGGLE_AUDIO,
-      ({ enabled }: { from: string; callId: string; enabled: boolean }) => {
-        setRemoteAudioEnabled(enabled);
-      },
-    );
-
-    s.on(
-      CallEvents.CALL_TOGGLE_VIDEO,
-      ({ enabled }: { from: string; callId: string; enabled: boolean }) => {
-        setRemoteVideoEnabled(enabled);
-      },
-    );
-
-    s.on(CallEvents.CALL_MISSED, ({ message }: { message: string }) => {
-      setCallStatus("missed");
-      setErrorMessage(message || "Missed call");
-    });
-
-    return () => {
-      s.off(CallEvents.CALL_INCOMING);
-      s.off(CallEvents.CALL_RINGING);
-      s.off(CallEvents.CALL_ACCEPT);
-      s.off(CallEvents.CALL_OFFER);
-      s.off(CallEvents.CALL_ANSWER);
-      s.off(CallEvents.CALL_ICE);
-      s.off(CallEvents.CALL_END);
-      s.off(CallEvents.CALL_REJECT);
-      s.off(CallEvents.CALL_CANCELLED);
-      s.off(CallEvents.CALL_BUSY);
-      s.off(CallEvents.CALL_UNAVAILABLE);
-      s.off(CallEvents.CALL_TOGGLE_AUDIO);
-      s.off(CallEvents.CALL_TOGGLE_VIDEO);
-      s.off(CallEvents.CALL_MISSED);
+      });
     };
-  }, [userId, cleanup, acquireMedia, createPc]);
 
-  const startCall = useCallback(
-    async (to: string, type: CallType = CallType.VIDEO) => {
-      const s = socketRef.current;
+    const handleOffer = async ({
+      from,
+      offer,
+      callId: cId,
+    }: {
+      from: string;
+      offer: RTCSessionDescriptionInit;
+      callId: string;
+    }) => {
+      const peerConnection = createPc({
+        pc,
+        targetId: from,
+        currentCallId: cId,
+        remoteVideoRef,
+        socketRef: socket,
+        setCallStatus,
+        setConnectedAt,
+        endCallRef: endCallRef.current,
+        connectedAt,
+      });
 
-      if (!s?.connected) {
-        console.error("Socket not connected! Cannot initiate call.");
-        setErrorMessage("Socket not connected. Please try again.");
+      const stream =
+        localStream.current ??
+        (await acquireMedia({
+          type: callTypeRef.current,
+          localStream,
+          localVideoRef,
+        }));
+
+      stream
+        .getTracks()
+        .forEach((track) => peerConnection.addTrack(track, stream));
+
+      await peerConnection.setRemoteDescription(
+        new RTCSessionDescription(offer),
+      );
+
+      for (const c of iceCandidateQueue.current) {
+        try {
+          await peerConnection.addIceCandidate(new RTCIceCandidate(c));
+        } catch (err) {
+          console.warn("Error adding queued ICE candidate:", err);
+        }
+      }
+      iceCandidateQueue.current = [];
+
+      const answer = await peerConnection.createAnswer();
+      await peerConnection.setLocalDescription(answer);
+
+      socket?.emit(CallEvents.CALL_ANSWER, {
+        to: from,
+        answer,
+        callId: cId,
+      });
+    };
+
+    const handleAnswer = async ({
+      answer,
+    }: {
+      from: string;
+      answer: RTCSessionDescriptionInit;
+      callId: string;
+    }) => {
+      if (pc.current) {
+        await pc.current.setRemoteDescription(
+          new RTCSessionDescription(answer),
+        );
+      }
+    };
+
+    const handleIce = async ({
+      candidate,
+    }: {
+      candidate: RTCIceCandidateInit;
+    }) => {
+      const peerConnection = pc.current;
+
+      if (
+        !peerConnection ||
+        peerConnection.signalingState === "closed" ||
+        !peerConnection.remoteDescription
+      ) {
+        iceCandidateQueue.current.push(candidate);
         return;
       }
 
+      try {
+        await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+      } catch (err) {
+        console.warn("Ignoring ICE candidate error:", err);
+      }
+    };
+
+    const handleEnd = () => cleanup();
+    const handleReject = () => cleanup();
+    const handleCancelled = () => cleanup();
+
+    const handleBusy = ({ message }: { message: string }) => {
+      setCallStatus("busy");
+      setErrorMessage(message);
+    };
+
+    const handleUnavailable = ({ message }: { message: string }) => {
+      setErrorMessage(message);
+      cleanup();
+    };
+
+    const handleToggleAudio = ({
+      enabled,
+    }: {
+      from: string;
+      callId: string;
+      enabled: boolean;
+    }) => {
+      setRemoteAudioEnabled(enabled);
+    };
+
+    const handleToggleVideo = ({
+      enabled,
+    }: {
+      from: string;
+      callId: string;
+      enabled: boolean;
+    }) => {
+      setRemoteVideoEnabled(enabled);
+    };
+
+    const handleMissed = ({ message }: { message: string }) => {
+      setCallStatus("missed");
+      setErrorMessage(message || "Missed call");
+    };
+
+    onIncomingCall(handleIncoming);
+    onRinging(handleRinging);
+    onAccept(handleAccept);
+    onOffer(handleOffer);
+    onAnswer(handleAnswer);
+    onIce(handleIce);
+    onEnd(handleEnd);
+    onReject(handleReject);
+    onCancelled(handleCancelled);
+    onBusy(handleBusy);
+    onUnavailable(handleUnavailable);
+    onToggleAudio(handleToggleAudio);
+    onToggleVideo(handleToggleVideo);
+    onMissed(handleMissed);
+
+    return () => {
+      off(CallEvents.CALL_INCOMING, handleIncoming);
+      off(CallEvents.CALL_RINGING, handleRinging);
+      off(CallEvents.CALL_ACCEPT, handleAccept);
+      off(CallEvents.CALL_OFFER, handleOffer);
+      off(CallEvents.CALL_ANSWER, handleAnswer);
+      off(CallEvents.CALL_ICE, handleIce);
+      off(CallEvents.CALL_END, handleEnd);
+      off(CallEvents.CALL_REJECT, handleReject);
+      off(CallEvents.CALL_CANCELLED, handleCancelled);
+      off(CallEvents.CALL_BUSY, handleBusy);
+      off(CallEvents.CALL_UNAVAILABLE, handleUnavailable);
+      off(CallEvents.CALL_TOGGLE_AUDIO, handleToggleAudio);
+      off(CallEvents.CALL_TOGGLE_VIDEO, handleToggleVideo);
+      off(CallEvents.CALL_MISSED, handleMissed);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [socket]);
+
+  const startCall = useCallback(
+    async (to: string, type: CallType = CallType.VIDEO) => {
+      if (!socket?.connected) {
+        setErrorMessage("Socket not connected. Please try again.");
+        return;
+      }
       setCallStatus("calling");
       setActiveCall({ callId: "", remoteUserId: to, callType: type });
       setErrorMessage(null);
-
-      await acquireMedia(type);
-
-      s.emit(CallEvents.CALL_INITIATE, {
-        to,
-        callType: type,
-      });
+      await acquireMedia({ type, localStream, localVideoRef });
+      initiateCall(to, type);
     },
-    [acquireMedia],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [acquireMedia, socket],
   );
 
-  const acceptCall = useCallback(async () => {
+  const handleAcceptCall = useCallback(async () => {
     if (!incomingCall) return;
 
     const { from, callId: cId, callType: cType } = incomingCall;
@@ -361,30 +363,31 @@ export const useCall = (userId: string) => {
       callType: cType ?? CallType.VIDEO,
     });
 
-    await acquireMedia(cType ?? CallType.VIDEO);
+    await acquireMedia({
+      type: cType ?? CallType.VIDEO,
+      localStream,
+      localVideoRef,
+    });
 
-    socketRef.current?.emit(CallEvents.CALL_ACCEPT, { to: from, callId: cId });
-  }, [incomingCall, acquireMedia]);
+    acceptCall(from, cId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [incomingCall, acquireMedia, socket]);
 
-  const rejectCall = useCallback(() => {
+  const handleRejectCall = useCallback(() => {
     if (!incomingCall) return;
 
-    socketRef.current?.emit(CallEvents.CALL_REJECT, {
-      to: incomingCall.from,
-      callId: incomingCall.callId,
-    });
+    rejectCall(incomingCall.from, incomingCall.callId);
     cleanup();
-  }, [incomingCall, cleanup]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [incomingCall, cleanup, socket]);
 
-  const cancelCall = useCallback(() => {
+  const handleCancelCall = useCallback(() => {
     if (activeCall?.remoteUserId && activeCall.callId) {
-      socketRef.current?.emit(CallEvents.CALL_CANCELLED, {
-        to: activeCall.remoteUserId,
-        callId: activeCall.callId,
-      });
+      cancelCall(activeCall.remoteUserId, activeCall.callId);
     }
     cleanup();
-  }, [activeCall, cleanup]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeCall, cleanup, socket]);
 
   const toggleMute = useCallback(() => {
     if (localStream.current) {
@@ -395,14 +398,15 @@ export const useCall = (userId: string) => {
       setIsMuted(!newEnabled);
 
       if (activeCall) {
-        socketRef.current?.emit(CallEvents.CALL_TOGGLE_AUDIO, {
+        socket?.emit(CallEvents.CALL_TOGGLE_AUDIO, {
           to: activeCall.remoteUserId,
           callId: activeCall.callId,
           enabled: newEnabled,
         });
       }
     }
-  }, [activeCall]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeCall, socket]);
 
   const toggleCamera = useCallback(() => {
     if (localStream.current) {
@@ -413,14 +417,15 @@ export const useCall = (userId: string) => {
       setIsCameraOff(!newEnabled);
 
       if (activeCall?.remoteUserId && activeCall?.callId) {
-        socketRef.current?.emit(CallEvents.CALL_TOGGLE_VIDEO, {
+        socket?.emit(CallEvents.CALL_TOGGLE_VIDEO, {
           to: activeCall.remoteUserId,
           callId: activeCall.callId,
           enabled: newEnabled,
         });
       }
     }
-  }, [activeCall]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeCall, socket]);
 
   const startRingtone = useCallback(() => {
     const audioSrc =
@@ -496,9 +501,9 @@ export const useCall = (userId: string) => {
     connectedAt,
     errorMessage,
     startCall,
-    acceptCall,
-    rejectCall,
-    cancelCall,
+    handleAcceptCall,
+    handleRejectCall,
+    handleCancelCall,
     endCall,
     toggleMute,
     toggleCamera,

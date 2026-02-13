@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CallType } from "@/enum/socket-enum";
-import { CallStatus } from "@/hooks/useCall";
+import { CallStatus, CallType } from "@/enum/socket-enum";
 import { Mic, MicOff, Phone, Video, VideoOff, X } from "lucide-react";
 
 const CallTimer = ({ connectedAt }: { connectedAt: number }) => {

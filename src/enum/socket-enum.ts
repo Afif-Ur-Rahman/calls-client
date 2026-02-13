@@ -26,3 +26,21 @@ export enum CallType {
   AUDIO = "audio",
   VIDEO = "video",
 }
+
+export type CallStatus =
+  | "idle"
+  | "calling"
+  | "ringing"
+  | "connected"
+  | "busy"
+  | "missed";
+
+export type Call = {
+  callId: string;
+  from: string;
+  offer: RTCSessionDescriptionInit;
+  answer: RTCSessionDescriptionInit;
+  candidate: RTCIceCandidateInit;
+  callType: CallType;
+  enabled: boolean;
+};
