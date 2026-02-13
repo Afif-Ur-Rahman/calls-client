@@ -5,7 +5,13 @@ import { getSocket } from "@/lib/socket";
 import { CallEvents, CallType } from "@/enum/socket-enum";
 import { createPeerConnection } from "@/lib/webrtc";
 
-export type CallStatus = "idle" | "calling" | "ringing" | "connected";
+export type CallStatus =
+  | "idle"
+  | "calling"
+  | "ringing"
+  | "connected"
+  | "busy"
+  | "missed";
 
 export interface CallInfo {
   from: string;
@@ -274,8 +280,8 @@ export const useCall = (userId: string) => {
     s.on(CallEvents.CALL_CANCELLED, () => cleanup());
 
     s.on(CallEvents.CALL_BUSY, ({ message }: { message: string }) => {
+      setCallStatus("busy");
       setErrorMessage(message);
-      cleanup();
     });
 
     s.on(CallEvents.CALL_UNAVAILABLE, ({ message }: { message: string }) => {
@@ -297,6 +303,11 @@ export const useCall = (userId: string) => {
       },
     );
 
+    s.on(CallEvents.CALL_MISSED, ({ message }: { message: string }) => {
+      setCallStatus("missed");
+      setErrorMessage(message || "Missed call");
+    });
+
     return () => {
       s.off(CallEvents.CALL_INCOMING);
       s.off(CallEvents.CALL_RINGING);
@@ -311,6 +322,7 @@ export const useCall = (userId: string) => {
       s.off(CallEvents.CALL_UNAVAILABLE);
       s.off(CallEvents.CALL_TOGGLE_AUDIO);
       s.off(CallEvents.CALL_TOGGLE_VIDEO);
+      s.off(CallEvents.CALL_MISSED);
     };
   }, [userId, cleanup, acquireMedia, createPc]);
 
@@ -442,13 +454,13 @@ export const useCall = (userId: string) => {
   }, []);
 
   useEffect(() => {
-    if (callStatus === "ringing") {
+    if (callStatus === "ringing" && incomingCall) {
       startRingtone();
     } else {
       stopRingtone();
     }
     return () => stopRingtone();
-  }, [callStatus, startRingtone, stopRingtone]);
+  }, [callStatus, incomingCall, startRingtone, stopRingtone]);
 
   useEffect(() => {
     if (
@@ -492,5 +504,6 @@ export const useCall = (userId: string) => {
     toggleCamera,
     localVideoRef,
     remoteVideoRef,
+    cleanup,
   };
 };

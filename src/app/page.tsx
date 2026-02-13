@@ -31,6 +31,7 @@ export default function Home() {
     errorMessage,
     localVideoRef,
     remoteVideoRef,
+    cleanup,
   } = useCall(isJoined ? userId : "");
 
   if (!isJoined) {
@@ -123,6 +124,8 @@ export default function Home() {
         onCancelCall={cancelCall}
         onToggleMute={toggleMute}
         onToggleCamera={toggleCamera}
+        errorMessage={errorMessage}
+        onCleanup={cleanup}
       />
     </div>
   );

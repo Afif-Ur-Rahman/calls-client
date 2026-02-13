@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { CallType } from "@/enum/socket-enum";
 import { CallStatus } from "@/hooks/useCall";
-import { Mic, MicOff, Phone, Video, VideoOff } from "lucide-react";
+import { Mic, MicOff, Phone, Video, VideoOff, X } from "lucide-react";
 
 const CallTimer = ({ connectedAt }: { connectedAt: number }) => {
   const [elapsed, setElapsed] = useState(() =>
@@ -38,6 +38,8 @@ type Props = {
   onCancelCall: () => void;
   onToggleMute: () => void;
   onToggleCamera: () => void;
+  errorMessage: string | null;
+  onCleanup: () => void;
 };
 
 export const CallUI = ({
@@ -56,10 +58,14 @@ export const CallUI = ({
   onCancelCall,
   onToggleMute,
   onToggleCamera,
+  errorMessage,
+  onCleanup,
 }: Props) => {
   if (callStatus === "idle") return null;
 
   const isConnected = callStatus === "connected";
+  const isBusy = callStatus === "busy";
+  const isMissed = callStatus === "missed";
   const isVideoCall = callType === CallType.VIDEO;
 
   return (
@@ -72,7 +78,16 @@ export const CallUI = ({
           <span className="text-sm text-white">
             {callStatus === "calling" && "Calling…"}
             {callStatus === "ringing" && "Ringing…"}
-            {!remoteAudioEnabled ? "Muted" : isConnected && connectedAt && <CallTimer connectedAt={connectedAt} />}
+            {isBusy && (
+              <span className="text-red-400">{errorMessage ?? "User is busy"}</span>
+            )}
+            {isMissed && (
+              <span className="text-red-400">{errorMessage ?? "Missed call"}</span>
+            )}
+            {isConnected && !remoteAudioEnabled && "Muted"}
+            {isConnected && remoteAudioEnabled && connectedAt && (
+              <CallTimer connectedAt={connectedAt} />
+            )}
           </span>
         </div>
       </div>
@@ -133,39 +148,50 @@ export const CallUI = ({
         </div>
       )}
 
-      <div className="absolute bottom-0 left-0 right-0 z-50 flex items-center justify-center gap-5 bg-linear-to-t from-black/90 to-transparent px-6 py-8">
-        <button
-          onClick={onToggleMute}
-          className={`flex h-12 w-12 items-center justify-center rounded-full transition ${isMuted
-            ? "bg-white text-gray-900"
-            : "bg-white/20 hover:bg-white/30"
-            }`}
-          aria-label={isMuted ? "Unmute" : "Mute"}
-        >
-          {isMuted ? <MicOff /> : <Mic />}
-        </button>
-
-        {isVideoCall && (
+      {isMissed || isBusy ?
+        <div className="absolute bottom-0 left-0 right-0 z-50 flex items-center justify-center gap-5 bg-linear-to-t from-black/90 to-transparent px-6 py-8">
           <button
-            onClick={onToggleCamera}
-            className={`flex h-12 w-12 items-center justify-center rounded-full transition ${isCameraOff
+            onClick={onCleanup}
+            className="flex h-12 w-12 items-center justify-center rounded-full bg-gray-500 transition hover:bg-gray-600"
+            aria-label="Cancel"
+          >
+            <X />
+          </button>
+        </div>
+        :
+        <div className="absolute bottom-0 left-0 right-0 z-50 flex items-center justify-center gap-5 bg-linear-to-t from-black/90 to-transparent px-6 py-8">
+          <button
+            onClick={onToggleMute}
+            className={`flex h-12 w-12 items-center justify-center rounded-full transition ${isMuted
               ? "bg-white text-gray-900"
               : "bg-white/20 hover:bg-white/30"
               }`}
-            aria-label={isCameraOff ? "Turn camera on" : "Turn camera off"}
+            aria-label={isMuted ? "Unmute" : "Mute"}
           >
-            {isCameraOff ? <VideoOff /> : <Video />}
+            {isMuted ? <MicOff /> : <Mic />}
           </button>
-        )}
 
-        <button
-          onClick={isConnected ? onEndCall : onCancelCall}
-          className="flex h-12 w-20 items-center justify-center rounded-full bg-red-500 transition hover:bg-red-600"
-          aria-label={isConnected ? "End call" : "Cancel call"}
-        >
-          <Phone strokeWidth={0} fill="white" className="rotate-135" />
-        </button>
-      </div>
+          {isVideoCall && (
+            <button
+              onClick={onToggleCamera}
+              className={`flex h-12 w-12 items-center justify-center rounded-full transition ${isCameraOff
+                ? "bg-white text-gray-900"
+                : "bg-white/20 hover:bg-white/30"
+                }`}
+              aria-label={isCameraOff ? "Turn camera on" : "Turn camera off"}
+            >
+              {isCameraOff ? <VideoOff /> : <Video />}
+            </button>
+          )}
+
+          <button
+            onClick={isConnected ? onEndCall : onCancelCall}
+            className="flex h-12 w-20 items-center justify-center rounded-full bg-red-500 transition hover:bg-red-600"
+            aria-label={isConnected ? "End call" : "Cancel call"}
+          >
+            <Phone strokeWidth={0} fill="white" className="rotate-135" />
+          </button>
+        </div>}
     </div>
   );
 };
