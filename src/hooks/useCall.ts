@@ -127,17 +127,20 @@ export const useCall = () => {
       setIncomingCall({
         from: data.from,
         callId: data.callId,
+        groupCall: data.groupCall,
         callType: data.callType,
       });
       setActiveCall({
         callId: data.callId,
         remoteUserId: data.from,
+        groupCall: data.groupCall,
         callType: data.callType,
       });
       socket.emit("call:ringing", {
         to: data.from,
         callId: data.callId,
         callType: data.callType,
+        groupCall: data.groupCall,
       });
     };
 
@@ -147,6 +150,7 @@ export const useCall = () => {
         callId: data.callId,
         remoteUserId: data.from,
         callType: data.callType,
+        groupCall: data.groupCall,
       });
     };
 
@@ -342,16 +346,25 @@ export const useCall = () => {
   }, [socket]);
 
   const startCall = useCallback(
-    async (to: string, type: CallType = CallType.VIDEO) => {
+    async (
+      to: string,
+      type: CallType = CallType.VIDEO,
+      groupCall: boolean = false,
+    ) => {
       if (!socket?.connected) {
         setErrorMessage("Socket not connected. Please try again.");
         return;
       }
       setCallStatus("calling");
-      setActiveCall({ callId: "", remoteUserId: to, callType: type });
+      setActiveCall({
+        callId: "",
+        remoteUserId: to,
+        callType: type,
+        groupCall,
+      });
       setErrorMessage(null);
       await acquireMedia({ type, localStream, localVideoRef });
-      initiateCall(to, type);
+      initiateCall(to, type, groupCall);
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [acquireMedia, socket],
@@ -360,12 +373,13 @@ export const useCall = () => {
   const handleAcceptCall = useCallback(async () => {
     if (!incomingCall) return;
 
-    const { from, callId: cId, callType: cType } = incomingCall;
+    const { from, callId: cId, callType: cType, groupCall } = incomingCall;
     setIncomingCall(null);
     setActiveCall({
       callId: cId,
       remoteUserId: from,
       callType: cType ?? CallType.VIDEO,
+      groupCall,
     });
 
     await acquireMedia({

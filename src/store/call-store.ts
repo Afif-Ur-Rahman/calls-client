@@ -8,6 +8,7 @@ import { zustandStorage } from "./storage/storage";
 export interface CallInfo {
   from: string;
   callId: string;
+  groupCall: boolean;
   callType?: CallType;
 }
 
@@ -15,6 +16,7 @@ export interface ActiveCall {
   callId: string;
   remoteUserId: string;
   callType: CallType;
+  groupCall: boolean;
 }
 
 interface CallState {

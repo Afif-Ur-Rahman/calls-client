@@ -1,25 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { CallStatus, CallType } from "@/enum/socket-enum";
 import { Mic, MicOff, Phone, Video, VideoOff, X } from "lucide-react";
-
-const CallTimer = ({ connectedAt }: { connectedAt: number }) => {
-  const [elapsed, setElapsed] = useState(() =>
-    Math.floor((Date.now() - connectedAt) / 1000)
-  );
-
-  useEffect(() => {
-    const id = setInterval(() => {
-      setElapsed(Math.floor((Date.now() - connectedAt) / 1000));
-    }, 1000);
-    return () => clearInterval(id);
-  }, [connectedAt]);
-
-  const mins = Math.floor(elapsed / 60);
-  const secs = elapsed % 60;
-  return <>{`${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`}</>;
-}
+import { CallTimer } from "./call-timer";
 
 type Props = {
   userId: string;
@@ -41,7 +24,7 @@ type Props = {
   onCleanup: () => void;
 };
 
-export const CallUI = ({
+export const GroupCall = ({
   userId,
   localVideoRef,
   remoteVideoRef,

@@ -43,4 +43,5 @@ export type Call = {
   candidate: RTCIceCandidateInit;
   callType: CallType;
   enabled: boolean;
+  groupCall: boolean;
 };

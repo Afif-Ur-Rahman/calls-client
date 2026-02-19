@@ -8,15 +8,16 @@ type Props = {
   callType?: CallType;
   onAccept: () => void;
   onReject: () => void;
+  groupCall?: boolean;
 };
 
-export const IncomingCall = ({ from, callType, onAccept, onReject }: Props) => {
+export const IncomingCall = ({ from, callType, onAccept, onReject, groupCall }: Props) => {
   return (
     <div className="fixed inset-0 z-40 flex flex-col bg-black">
       <div className="absolute left-0 right-0 top-0 z-50 flex flex-col items-center justify-center bg-linear-to-b from-black/80 to-transparent px-6 py-4">
         <h3 className="text-xl font-semibold text-white">{from}</h3>
         <p className="mt-1 animate-pulse text-sm text-gray-400">
-          Incoming {callType === CallType.AUDIO ? "Audio" : "Video"} call…
+          Incoming {groupCall ? "Group" : "Private"} {callType === CallType.AUDIO ? "Audio" : "Video"} call…
         </p>
       </div>
       <div>

@@ -7,8 +7,8 @@ type UsersCallback = (users: string[]) => void;
 export const useCallSocket = () => {
   const { socket } = useCallStore();
 
-  const initiateCall = (to: string, callType: CallType) => {
-    socket?.emit(CallEvents.CALL_INITIATE, { to, callType });
+  const initiateCall = (to: string, callType: CallType, groupCall: boolean) => {
+    socket?.emit(CallEvents.CALL_INITIATE, { to, callType, groupCall });
   };
 
   const acceptCall = (to: string, callId: string) => {
