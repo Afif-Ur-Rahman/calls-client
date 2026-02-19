@@ -5,10 +5,11 @@ import { Call, CallEvents, CallType } from "@/enum/socket-enum";
 import { acquireMedia, createPc } from "@/lib/webrtc";
 import { useCallStore } from "@/store/call-store";
 import { useCallSocket } from "./useCallSocket";
-import { getSocket } from "@/lib";
+import { createSocket } from "@/lib/socket";
 
-export const useCall = (userId: string) => {
+export const useCall = () => {
   const {
+    userId,
     incomingCall,
     activeCall,
     callStatus,
@@ -27,21 +28,21 @@ export const useCall = (userId: string) => {
     setRemoteVideoEnabled,
     setConnectedAt,
     setErrorMessage,
-    reset,
+    resetCall,
+    socket,
     setSocket,
   } = useCallStore();
 
   const pc = useRef<RTCPeerConnection | null>(null);
   const localStream = useRef<MediaStream | null>(null);
-  const ringtoneRef = useRef<HTMLAudioElement | null>(null);
-  const iceCandidateQueue = useRef<RTCIceCandidateInit[]>([]);
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
+  const iceCandidateQueue = useRef<RTCIceCandidateInit[]>([]);
   const callTypeRef = useRef<CallType>(CallType.VIDEO);
+  const ringtoneRef = useRef<HTMLAudioElement | null>(null);
   const endCallRef = useRef(() => {});
 
   const {
-    socket,
     onIncomingCall,
     onRinging,
     onAccept,
@@ -64,28 +65,28 @@ export const useCall = (userId: string) => {
   } = useCallSocket();
 
   useEffect(() => {
-    if (activeCall?.callType) {
-      callTypeRef.current = activeCall.callType;
-    }
+    if (activeCall?.callType) callTypeRef.current = activeCall.callType;
   }, [activeCall?.callType]);
 
   useEffect(() => {
-    if (userId) {
-      setSocket(getSocket(userId));
+    if (userId && !socket) {
+      const s = createSocket(userId);
+      setSocket(s);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId]);
+  }, [userId, socket, setSocket]);
 
   const cleanup = useCallback(() => {
     pc.current?.close();
     pc.current = null;
     localStream.current?.getTracks().forEach((t) => t.stop());
     localStream.current = null;
+
     if (localVideoRef.current) localVideoRef.current.srcObject = null;
     if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null;
-    reset();
+
+    resetCall();
     iceCandidateQueue.current = [];
-  }, [reset]);
+  }, [resetCall]);
 
   const endCall = useCallback(() => {
     if (activeCall?.remoteUserId && activeCall.callId) {
@@ -115,7 +116,7 @@ export const useCall = (userId: string) => {
         remoteUserId: data.from,
         callType: data.callType,
       });
-      socket?.emit("call:ringing", {
+      socket.emit("call:ringing", {
         to: data.from,
         callId: data.callId,
         callType: data.callType,
@@ -163,11 +164,7 @@ export const useCall = (userId: string) => {
       const offer = await peerConnection.createOffer();
       await peerConnection.setLocalDescription(offer);
 
-      socket?.emit(CallEvents.CALL_OFFER, {
-        to: from,
-        offer,
-        callId: cId,
-      });
+      socket.emit(CallEvents.CALL_OFFER, { to: from, offer, callId: cId });
     };
 
     const handleOffer = async ({
@@ -229,9 +226,7 @@ export const useCall = (userId: string) => {
     const handleAnswer = async ({
       answer,
     }: {
-      from: string;
       answer: RTCSessionDescriptionInit;
-      callId: string;
     }) => {
       if (pc.current) {
         await pc.current.setRemoteDescription(
@@ -263,10 +258,6 @@ export const useCall = (userId: string) => {
       }
     };
 
-    const handleEnd = () => cleanup();
-    const handleReject = () => cleanup();
-    const handleCancelled = () => cleanup();
-
     const handleBusy = ({ message }: { message: string }) => {
       setCallStatus("busy");
       setErrorMessage(message);
@@ -283,21 +274,17 @@ export const useCall = (userId: string) => {
       from: string;
       callId: string;
       enabled: boolean;
-    }) => {
-      setRemoteAudioEnabled(enabled);
-    };
-
+    }) => setRemoteAudioEnabled(enabled);
+    
     const handleToggleVideo = ({
       enabled,
     }: {
       from: string;
       callId: string;
       enabled: boolean;
-    }) => {
-      setRemoteVideoEnabled(enabled);
-    };
-
-    const handleMissed = ({ message }: { message: string }) => {
+    }) => setRemoteVideoEnabled(enabled);
+    
+    const handleMissed = ({ message }: { message?: string }) => {
       setCallStatus("missed");
       setErrorMessage(message || "Missed call");
     };
@@ -308,9 +295,9 @@ export const useCall = (userId: string) => {
     onOffer(handleOffer);
     onAnswer(handleAnswer);
     onIce(handleIce);
-    onEnd(handleEnd);
-    onReject(handleReject);
-    onCancelled(handleCancelled);
+    onEnd(cleanup);
+    onReject(cleanup);
+    onCancelled(cleanup);
     onBusy(handleBusy);
     onUnavailable(handleUnavailable);
     onToggleAudio(handleToggleAudio);
@@ -324,9 +311,9 @@ export const useCall = (userId: string) => {
       off(CallEvents.CALL_OFFER, handleOffer);
       off(CallEvents.CALL_ANSWER, handleAnswer);
       off(CallEvents.CALL_ICE, handleIce);
-      off(CallEvents.CALL_END, handleEnd);
-      off(CallEvents.CALL_REJECT, handleReject);
-      off(CallEvents.CALL_CANCELLED, handleCancelled);
+      off(CallEvents.CALL_END, cleanup);
+      off(CallEvents.CALL_REJECT, cleanup);
+      off(CallEvents.CALL_CANCELLED, cleanup);
       off(CallEvents.CALL_BUSY, handleBusy);
       off(CallEvents.CALL_UNAVAILABLE, handleUnavailable);
       off(CallEvents.CALL_TOGGLE_AUDIO, handleToggleAudio);
@@ -432,15 +419,6 @@ export const useCall = (userId: string) => {
       callTypeRef.current === CallType.VIDEO
         ? "/audio/videoNotif.mp3"
         : "/audio/notification.mp3";
-
-    if (
-      ringtoneRef.current &&
-      ringtoneRef.current.src !== new URL(audioSrc, window.location.origin).href
-    ) {
-      ringtoneRef.current.pause();
-      ringtoneRef.current = null;
-    }
-
     if (!ringtoneRef.current) {
       ringtoneRef.current = new Audio(audioSrc);
       ringtoneRef.current.loop = true;
@@ -459,11 +437,8 @@ export const useCall = (userId: string) => {
   }, []);
 
   useEffect(() => {
-    if (callStatus === "ringing" && incomingCall) {
-      startRingtone();
-    } else {
-      stopRingtone();
-    }
+    if (callStatus === "ringing" && incomingCall) startRingtone();
+    else stopRingtone();
     return () => stopRingtone();
   }, [callStatus, incomingCall, startRingtone, stopRingtone]);
 

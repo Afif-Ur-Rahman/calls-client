@@ -1,6 +1,9 @@
 import { create } from "zustand";
+import { createJSONStorage, persist } from "zustand/middleware";
 import { CallStatus, CallType } from "@/enum/socket-enum";
 import { Socket } from "socket.io-client";
+import { disconnectSocket } from "@/lib/socket";
+import { zustandStorage } from "./storage/storage";
 
 export interface CallInfo {
   from: string;
@@ -15,6 +18,16 @@ export interface ActiveCall {
 }
 
 interface CallState {
+  userId: string;
+  activeUsers: string[];
+  socket: Socket | null;
+
+  setUserId: (id: string) => void;
+  setActiveUsers: (users: string[]) => void;
+  setSocket: (socket: Socket) => void;
+  logout: () => void;
+
+  isGroupCall: boolean | null;
   incomingCall: CallInfo | null;
   activeCall: ActiveCall | null;
   callStatus: CallStatus;
@@ -27,9 +40,7 @@ interface CallState {
   connectedAt: number | null;
   errorMessage: string | null;
 
-  socket: Socket | null;
-  setSocket: (socket: Socket | null) => void;
-
+  setIsGroupCall: (v: boolean | null) => void;
   setIncomingCall: (c: CallInfo | null) => void;
   setActiveCall: (c: ActiveCall | null) => void;
   setCallStatus: (s: CallStatus) => void;
@@ -42,47 +53,74 @@ interface CallState {
   setConnectedAt: (v: number | null) => void;
   setErrorMessage: (v: string | null) => void;
 
-  reset: () => void;
+  resetCall: () => void;
 }
 
-export const useCallStore = create<CallState>((set) => ({
-  incomingCall: null,
-  activeCall: null,
-  callStatus: "idle",
+export const useCallStore = create<CallState>()(
+  persist(
+    (set) => ({
+      userId: "",
+      activeUsers: [],
+      socket: null,
 
-  isMuted: false,
-  isCameraOff: false,
-  remoteAudioEnabled: true,
-  remoteVideoEnabled: true,
+      setUserId: (userId) => set({ userId }),
+      setActiveUsers: (activeUsers) => set({ activeUsers }),
+      setSocket: (socket) => set({ socket }),
 
-  connectedAt: null,
-  errorMessage: null,
+      logout: () => {
+        disconnectSocket();
+        set({
+          userId: "",
+          socket: null,
+          isGroupCall: null,
+        });
+      },
 
-  socket: null,
-  setSocket: (socket) => set({ socket }),
-
-  setIncomingCall: (incomingCall) => set({ incomingCall }),
-  setActiveCall: (activeCall) => set({ activeCall }),
-  setCallStatus: (callStatus) => set({ callStatus }),
-
-  setIsMuted: (isMuted) => set({ isMuted }),
-  setIsCameraOff: (isCameraOff) => set({ isCameraOff }),
-  setRemoteAudioEnabled: (remoteAudioEnabled) => set({ remoteAudioEnabled }),
-  setRemoteVideoEnabled: (remoteVideoEnabled) => set({ remoteVideoEnabled }),
-
-  setConnectedAt: (connectedAt) => set({ connectedAt }),
-  setErrorMessage: (errorMessage) => set({ errorMessage }),
-
-  reset: () =>
-    set({
+      isGroupCall: null,
       incomingCall: null,
       activeCall: null,
       callStatus: "idle",
+
       isMuted: false,
       isCameraOff: false,
       remoteAudioEnabled: true,
       remoteVideoEnabled: true,
+
       connectedAt: null,
       errorMessage: null,
+
+      setIsGroupCall: (isGroupCall) => set({ isGroupCall }),
+      setIncomingCall: (incomingCall) => set({ incomingCall }),
+      setActiveCall: (activeCall) => set({ activeCall }),
+      setCallStatus: (callStatus) => set({ callStatus }),
+
+      setIsMuted: (isMuted) => set({ isMuted }),
+      setIsCameraOff: (isCameraOff) => set({ isCameraOff }),
+      setRemoteAudioEnabled: (remoteAudioEnabled) =>
+        set({ remoteAudioEnabled }),
+      setRemoteVideoEnabled: (remoteVideoEnabled) =>
+        set({ remoteVideoEnabled }),
+
+      setConnectedAt: (connectedAt) => set({ connectedAt }),
+      setErrorMessage: (errorMessage) => set({ errorMessage }),
+
+      resetCall: () =>
+        set({
+          incomingCall: null,
+          activeCall: null,
+          callStatus: "idle",
+          isMuted: false,
+          isCameraOff: false,
+          remoteAudioEnabled: true,
+          remoteVideoEnabled: true,
+          connectedAt: null,
+          errorMessage: null,
+        }),
     }),
-}));
+    {
+      name: "call-store",
+      storage: createJSONStorage(() => zustandStorage),
+      partialize: (state) => ({ userId: state.userId }),
+    },
+  ),
+);
