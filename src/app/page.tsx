@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { CallUI, IncomingCall } from "@/components";
+import { CallUI, IncomingCall, Select } from "@/components";
 import { useCall } from "@/hooks/useCall";
 import { CallType } from "@/enum/socket-enum";
 import { LogOut, Phone, User, Users, Video } from "lucide-react";
@@ -30,7 +30,7 @@ export default function Home() {
     remoteVideoRef,
     cleanup,
   } = useCall();
-  const { userId, setUserId, isGroupCall, setIsGroupCall, activeCall, logout } = useCallStore();
+  const { allUsers, userId, setUserId, isGroupCall, setIsGroupCall, activeCall, logout } = useCallStore();
   const [userIdInput, setUserIdInput] = useState("");
   const [targetIds, setTargetIds] = useState<string[]>([]);
   const [isJoined, setIsJoined] = useState(false);
@@ -112,18 +112,22 @@ export default function Home() {
 
       <div className="flex flex-col items-center gap-3">
         <button
-          onClick={() => setIsGroupCall(isGroupCall ? false : true)}
+          onClick={() => {
+            setTargetIds([]);
+            setIsGroupCall(isGroupCall ? false : true)
+          }}
           className="w-full text-center rounded-lg bg-green-600 px-6 py-3 font-semibold text-white transition hover:bg-green-700"
         >
           {`Switch to ${isGroupCall ? "Private" : "Group"} Call`}
         </button>
-        {isGroupCall ? null : <input
-          type="text"
-          placeholder="Target User ID"
-          value={targetIds[0] || ""}
-          onChange={(e) => setTargetIds([e.target.value])}
-          className="w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-3 text-center text-white placeholder-gray-500 outline-none focus:border-green-500"
-        />}
+        <Select
+          allUsers={allUsers}
+          selectedUsers={targetIds}
+          setSelectedUsers={setTargetIds}
+          isMulti={isGroupCall}
+          placeholder={isGroupCall ? "Select Users..." : "Select User..."}
+        />
+
         <div className="flex w-full gap-3">
           <button
             onClick={() => targetIds[0]?.trim() && startCall(targetIds[0], CallType.AUDIO)}

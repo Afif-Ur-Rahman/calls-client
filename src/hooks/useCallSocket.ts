@@ -2,9 +2,11 @@ import { Call, CallEvents, CallType } from "@/enum/socket-enum";
 import { useCallStore } from "@/store/call-store";
 
 type Callback = (data: Call) => void;
+type UsersCallback = (users: string[]) => void;
 
 export const useCallSocket = () => {
   const { socket } = useCallStore();
+
   const initiateCall = (to: string, callType: CallType) => {
     socket?.emit(CallEvents.CALL_INITIATE, { to, callType });
   };
@@ -79,10 +81,18 @@ export const useCallSocket = () => {
   const onMissed = (cb: (data: { message: string }) => void) =>
     socket?.on(CallEvents.CALL_MISSED, cb);
 
+  const getAllUsers = (cb: UsersCallback) => {
+    socket?.on("all-users", cb);
+  };
+
   // Remove listeners
   const off = (
     event: string,
-    cb: Callback | (() => void) | ((data: { message: string }) => void),
+    cb:
+      | Callback
+      | (() => void)
+      | ((data: { message: string }) => void)
+      | UsersCallback,
   ) => socket?.off(event, cb);
 
   return {
@@ -112,5 +122,6 @@ export const useCallSocket = () => {
     onMissed,
     off,
     socket,
+    getAllUsers,
   };
 };

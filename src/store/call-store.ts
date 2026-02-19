@@ -18,10 +18,12 @@ export interface ActiveCall {
 }
 
 interface CallState {
+  allUsers: string[];
   userId: string;
   activeUsers: string[];
   socket: Socket | null;
 
+  setAllUsers: (users: string[]) => void;
   setUserId: (id: string) => void;
   setActiveUsers: (users: string[]) => void;
   setSocket: (socket: Socket) => void;
@@ -59,10 +61,12 @@ interface CallState {
 export const useCallStore = create<CallState>()(
   persist(
     (set) => ({
+      allUsers: [],
       userId: "",
       activeUsers: [],
       socket: null,
 
+      setAllUsers: (allUsers) => set({ allUsers }),
       setUserId: (userId) => set({ userId }),
       setActiveUsers: (activeUsers) => set({ activeUsers }),
       setSocket: (socket) => set({ socket }),
@@ -73,6 +77,7 @@ export const useCallStore = create<CallState>()(
           userId: "",
           socket: null,
           isGroupCall: null,
+          allUsers: [],
         });
       },
 

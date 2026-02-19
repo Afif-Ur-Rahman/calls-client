@@ -31,6 +31,7 @@ export const useCall = () => {
     resetCall,
     socket,
     setSocket,
+    setAllUsers,
   } = useCallStore();
 
   const pc = useRef<RTCPeerConnection | null>(null);
@@ -61,6 +62,7 @@ export const useCall = () => {
     acceptCall,
     rejectCall,
     cancelCall,
+    getAllUsers,
     off,
   } = useCallSocket();
 
@@ -74,6 +76,22 @@ export const useCall = () => {
       setSocket(s);
     }
   }, [userId, socket, setSocket]);
+
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleAllUsers = (users: string[]) => {
+      const filteredUsers = users.filter((u) => u !== userId);
+      setAllUsers(filteredUsers);
+    };
+
+    getAllUsers(handleAllUsers);
+
+    return () => {
+      off("all-users", handleAllUsers);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [socket, userId, setAllUsers]);
 
   const cleanup = useCallback(() => {
     pc.current?.close();
@@ -275,7 +293,7 @@ export const useCall = () => {
       callId: string;
       enabled: boolean;
     }) => setRemoteAudioEnabled(enabled);
-    
+
     const handleToggleVideo = ({
       enabled,
     }: {
@@ -283,7 +301,7 @@ export const useCall = () => {
       callId: string;
       enabled: boolean;
     }) => setRemoteVideoEnabled(enabled);
-    
+
     const handleMissed = ({ message }: { message?: string }) => {
       setCallStatus("missed");
       setErrorMessage(message || "Missed call");
