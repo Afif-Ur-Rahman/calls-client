@@ -12,7 +12,6 @@ export const CallSelector = ({ startCall }: CallSelectorProps) => {
   const { allUsers, isGroupCall, setIsGroupCall, callStatus, logout } = useCallStore();
   const [targetIds, setTargetIds] = useState<string[]>([]);
 
-
   const handleLogout = () => {
     setTargetIds([]);
     logout();

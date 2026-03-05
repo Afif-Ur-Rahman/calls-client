@@ -1,4 +1,7 @@
 export enum CallEvents {
+  // Active users
+  ALL_USERS = "all-users",
+
   // Call lifecycle
   CALL_INITIATE = "call:initiate",
   CALL_INCOMING = "call:incoming",

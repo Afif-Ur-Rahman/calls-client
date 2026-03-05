@@ -4,6 +4,7 @@ import { PrivateCall, IncomingCall, GroupCall } from "@/components";
 import { useCall } from "@/hooks/useCall";
 import { useCallStore } from "@/store/call-store";
 import { CallSelector, LoginCall } from "./blocks";
+import { CallType } from "@/enum";
 
 export const Home = () => {
   const {
@@ -16,8 +17,6 @@ export const Home = () => {
     toggleCamera,
     incomingCall,
     callStatus,
-    callType,
-    remoteUserId,
     isMuted,
     isCameraOff,
     remoteAudioEnabled,
@@ -63,8 +62,8 @@ export const Home = () => {
           localVideoRef={localVideoRef}
           remoteVideoRef={remoteVideoRef}
           callStatus={callStatus}
-          callType={callType}
-          remoteUserId={remoteUserId}
+          callType={activeCall?.callType ?? CallType.AUDIO}
+          remoteUserId={activeCall?.remoteUserId ?? null}
           isMuted={isMuted}
           isCameraOff={isCameraOff}
           remoteAudioEnabled={remoteAudioEnabled}
@@ -83,8 +82,8 @@ export const Home = () => {
           localVideoRef={localVideoRef}
           remoteVideoRef={remoteVideoRef}
           callStatus={callStatus}
-          callType={callType}
-          remoteUserId={remoteUserId}
+          callType={activeCall?.callType ?? CallType.AUDIO}
+          remoteUserId={activeCall?.remoteUserId ?? null}
           isMuted={isMuted}
           isCameraOff={isCameraOff}
           remoteAudioEnabled={remoteAudioEnabled}
